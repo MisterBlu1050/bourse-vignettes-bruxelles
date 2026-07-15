@@ -163,6 +163,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .app-header > div { display: flex; align-items: center; gap: 14px; }
 .backend-alert { margin: 16px 54px 0; min-height: 42px; padding: 9px 12px; border-radius: 6px; background: #fff0da; color: #8e5500; display: flex; align-items: center; gap: 8px; font-size: 11px; }
 .backend-alert button { margin-left: auto; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.match-notification-panel { margin: 16px 54px 0; padding: 14px 16px; border-radius: 10px; background: #fffaf0; border: 1px solid #ead7b6; display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center; color: var(--navy); box-shadow: 0 12px 30px rgba(20, 30, 55, .07); }
+.match-notification-panel > svg { color: var(--orange); }
+.match-notification-panel strong { display: block; font-size: 13px; margin-bottom: 3px; }
+.match-notification-panel p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.match-notification-panel button { border: 0; background: var(--navy); color: white; border-radius: 999px; padding: 8px 13px; font-size: 12px; cursor: pointer; }
+.match-notification-panel .icon-button { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; background: transparent; color: var(--muted); }
 .demo-badge { color: var(--green); background: #e4f1e8; border-radius: 99px; padding: 5px 9px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .notification-button { border: 0; background: transparent; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; position: relative; }
 .notification-button:hover { background: #f0ece4; }
@@ -333,7 +339,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .app-header > .brand, .menu-button { display: flex; }
   .menu-button { border: 0; background: transparent; padding: 6px; }
   .workspace { padding: 38px 28px 80px; }
-  .backend-alert { margin: 14px 28px 0; }
+  .backend-alert, .match-notification-panel { margin: 14px 28px 0; }
 }
 
 @media (max-width: 700px) {
@@ -365,7 +371,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .app-header { height: 62px; padding: 0 14px; }
   .app-header .brand-mark { transform: scale(.82); }
   .workspace { padding: 30px 18px 76px; }
-  .backend-alert { margin: 12px 18px 0; }
+  .backend-alert, .match-notification-panel { margin: 12px 18px 0; }
+  .match-notification-panel { grid-template-columns: auto 1fr; }
+  .match-notification-panel button { justify-self: start; }
   .page-heading { min-height: auto; margin-bottom: 23px; }
   .page-heading h1 { font-size: 36px; }
   .match-callout { display: none; }

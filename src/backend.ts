@@ -1,13 +1,13 @@
 import type { User } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
-import type { Exchange, ExchangeStatus, Inventory, Match, Venue } from './types'
+import type { Exchange, ExchangeStatus, Inventory, Match, MatchNotification, Venue } from './types'
 
 export interface ParentProfile {
   id: string
   adult_alias: string
   commune: string
   is_adult_confirmed: boolean
-  email_match_notifications: boolean
+  match_notifications_enabled: boolean
 }
 
 export interface BackendWorkspace {
@@ -15,6 +15,7 @@ export interface BackendWorkspace {
   inventory: Inventory
   matches: Match[]
   exchanges: Exchange[]
+  matchNotifications: MatchNotification[]
   venues: Venue[]
 }
 
@@ -32,16 +33,16 @@ export async function getCurrentUser(): Promise<User | null> {
 export async function getProfile(userId: string): Promise<ParentProfile | null> {
   const { data, error } = await requireClient().from('profiles').select('id,adult_alias,commune,is_adult_confirmed,email_match_notifications').eq('id', userId).maybeSingle()
   if (error) throw error
-  return data
+  return data ? { id: data.id, adult_alias: data.adult_alias, commune: data.commune, is_adult_confirmed: data.is_adult_confirmed, match_notifications_enabled: data.email_match_notifications } : null
 }
 
 export async function createProfile(userId: string, alias: string, commune: string): Promise<ParentProfile> {
   const { data, error } = await requireClient().from('profiles').insert({ id: userId, adult_alias: alias, commune, is_adult_confirmed: true }).select('id,adult_alias,commune,is_adult_confirmed,email_match_notifications').single()
   if (error) throw error
-  return data
+  return { id: data.id, adult_alias: data.adult_alias, commune: data.commune, is_adult_confirmed: data.is_adult_confirmed, match_notifications_enabled: data.email_match_notifications }
 }
 
-export async function updateEmailMatchNotifications(userId: string, enabled: boolean): Promise<ParentProfile> {
+export async function updateMatchNotifications(userId: string, enabled: boolean): Promise<ParentProfile> {
   const { data, error } = await requireClient()
     .from('profiles')
     .update({ email_match_notifications: enabled })
@@ -49,7 +50,7 @@ export async function updateEmailMatchNotifications(userId: string, enabled: boo
     .select('id,adult_alias,commune,is_adult_confirmed,email_match_notifications')
     .single()
   if (error) throw error
-  return data
+  return { id: data.id, adult_alias: data.adult_alias, commune: data.commune, is_adult_confirmed: data.is_adult_confirmed, match_notifications_enabled: data.email_match_notifications }
 }
 
 const mapExchangeStatus = (status: string): ExchangeStatus => ({ proposed: 'propose', confirmed: 'confirme', completed: 'termine', cancelled: 'annule', expired: 'annule' })[status] as ExchangeStatus
@@ -60,13 +61,14 @@ export async function loadWorkspace(): Promise<BackendWorkspace> {
   if (collectionError) throw collectionError
   const collectionId = activeCollection.id as string
 
-  const [inventoryResult, matchesResult, exchangesResult, venuesResult] = await Promise.all([
+  const [inventoryResult, matchesResult, exchangesResult, notificationsResult, venuesResult] = await Promise.all([
     client.from('inventory').select('sticker_id,kind').eq('collection_id', collectionId),
     client.rpc('find_matches', { target_collection: collectionId }),
     client.rpc('list_my_exchanges'),
+    client.rpc('list_my_match_notifications'),
     client.from('venues').select('id,name,commune,public_note').eq('approved', true).order('name')
   ])
-  for (const result of [inventoryResult, matchesResult, exchangesResult, venuesResult]) if (result.error) throw result.error
+  for (const result of [inventoryResult, matchesResult, exchangesResult, notificationsResult, venuesResult]) if (result.error) throw result.error
 
   const inventoryRows = inventoryResult.data ?? []
   const matches: Match[] = (matchesResult.data ?? []).map((row: Record<string, unknown>) => ({
@@ -81,6 +83,14 @@ export async function loadWorkspace(): Promise<BackendWorkspace> {
     date: String(row.meeting_date), slot: String(row.meeting_slot), status: mapExchangeStatus(String(row.status)), code: String(row.meeting_code), canConfirm: Boolean(row.can_confirm)
   }))
   const approvedVenues: Venue[] = (venuesResult.data ?? []).map((row) => ({ id: row.id, name: row.name, commune: row.commune, note: row.public_note }))
+  const matchNotifications: MatchNotification[] = (notificationsResult.data ?? []).map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    adultAlias: String(row.other_alias),
+    commune: String(row.other_commune),
+    gives: row.i_receive as string[],
+    receives: row.i_give as string[],
+    createdAt: String(row.created_at)
+  }))
 
   return {
     collectionId,
@@ -88,7 +98,7 @@ export async function loadWorkspace(): Promise<BackendWorkspace> {
       doubles: inventoryRows.filter((row) => row.kind === 'double').map((row) => row.sticker_id),
       wanted: inventoryRows.filter((row) => row.kind === 'wanted').map((row) => row.sticker_id)
     },
-    matches, exchanges, venues: approvedVenues
+    matches, exchanges, matchNotifications, venues: approvedVenues
   }
 }
 
@@ -108,8 +118,15 @@ export async function saveInventory(collectionId: string, inventory: Inventory) 
   }
   const { error: notifyError } = await client.rpc('queue_match_notifications', { target_collection: collectionId })
   if (notifyError) console.warn('Notifications de matching non créées', notifyError)
-  const { error: emailError } = await client.functions.invoke('send-match-emails')
-  if (emailError) console.warn('Emails de matching non envoyés', emailError)
+}
+
+export async function markMatchNotificationsRead() {
+  const { error } = await requireClient()
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('kind', 'match')
+    .is('read_at', null)
+  if (error) throw error
 }
 
 export async function proposeBackendExchange(collectionId: string, match: Match, venue: Venue, date: string, slot: string) {

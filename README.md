@@ -22,27 +22,19 @@ Sans variables d’environnement, l’application démarre en **mode démonstrat
 5. Ajouter l’URL locale et l’URL Cloudflare Pages aux Redirect URLs de Supabase.
 6. Obtenir l’accord explicite de chaque lieu, puis passer sa colonne `approved` à `true`.
 
-Le schéma contient les règles RLS, le matching réciproque, les propositions, notifications email de matching, blocages, signalements, journal de modération et une confirmation atomique qui revérifie la disponibilité des vignettes.
+Le schéma contient les règles RLS, le matching réciproque, les propositions, les notifications internes de matching, les blocages, les signalements, le journal de modération et une confirmation atomique qui revérifie la disponibilité des vignettes.
 
-## Notifications email de matching
+## Notifications internes de matching
 
-Quand un parent met à jour ses doubles ou ses vignettes recherchées, `queue_match_notifications` détecte les nouvelles correspondances réciproques et crée une notification `match` pour les deux parents concernés. L’Edge Function `send-match-emails` envoie ensuite les emails en attente.
+Quand un parent met à jour ses doubles ou ses vignettes recherchées, `queue_match_notifications` détecte les nouvelles correspondances réciproques et crée une notification `match` pour les deux parents concernés.
 
-Secrets requis côté Supabase :
-
-```bash
-supabase secrets set RESEND_API_KEY=...
-supabase secrets set MATCH_EMAIL_FROM="Bourse aux vignettes Bruxelles <notifications@votre-domaine.be>"
-supabase secrets set APP_PUBLIC_URL=https://bourse-vignettes-bruxelles.pages.dev
-```
-
-Sans ces secrets, les correspondances sont détectées mais les emails ne partent pas. Chaque parent peut désactiver les emails de matching dans l’écran “Sécurité et données”.
+Ces alertes sont affichées directement dans l’application. Aucun service email payant, domaine personnalisé ou configuration Resend n’est requis. Chaque parent peut désactiver les notifications de matching dans l’écran “Sécurité et données”.
 
 ## Déployer gratuitement sur Cloudflare Pages
 
 - Build command : `pnpm build`
 - Build output : `dist`
-- Variables : les trois variables documentées dans `.env.example`
+- Variables : les variables publiques documentées dans `.env.example`
 - Node version : 20 ou plus récent
 
 Le domaine `*.pages.dev` permet de lancer le pilote sans achat de domaine. Ajoutez Turnstile aux fonctions serveur avant d’ouvrir l’inscription publiquement.

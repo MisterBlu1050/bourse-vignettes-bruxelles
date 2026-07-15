@@ -10,8 +10,8 @@ import { allStickerCodes, canonicalizeStickerCode, isStickerCode, stickerGroups 
 import { findReciprocalMatches, normalizeStickerIds } from './lib/matching'
 import { signInWithEmail, isSupabaseConfigured, supabase } from './lib/supabase'
 import { storage } from './lib/storage'
-import type { Exchange, Inventory, Match, View } from './types'
-import { confirmBackendExchange, createProfile, deleteAccount, getProfile, loadWorkspace, proposeBackendExchange, saveInventory, setBackendExchangeStatus, signOut, updateEmailMatchNotifications, type ParentProfile } from './backend'
+import type { Exchange, Inventory, Match, MatchNotification, View } from './types'
+import { confirmBackendExchange, createProfile, deleteAccount, getProfile, loadWorkspace, markMatchNotificationsRead, proposeBackendExchange, saveInventory, setBackendExchangeStatus, signOut, updateMatchNotifications, type ParentProfile } from './backend'
 
 const navItems: Array<{ id: View; label: string; icon: typeof Home }> = [
   { id: 'inventaire', label: 'Mes vignettes', icon: LibraryBig },
@@ -327,7 +327,7 @@ function ExchangesView({ exchanges, updateExchange }: { exchanges: Exchange[]; u
   </motion.section>
 }
 
-function SafetyView({ emailNotifications, onToggleEmail, onReset }: { emailNotifications: boolean; onToggleEmail: () => void; onReset: () => void }) {
+function SafetyView({ matchNotificationsEnabled, onToggleMatchNotifications, onReset }: { matchNotificationsEnabled: boolean; onToggleMatchNotifications: () => void; onReset: () => void }) {
   return <motion.section className="workspace" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}>
     <div className="page-heading"><div><span className="eyebrow">Compte adulte</span><h1>Sécurité et données</h1><p>Des règles simples pour protéger toutes les familles.</p></div></div>
     <div className="safety-layout">
@@ -337,7 +337,7 @@ function SafetyView({ emailNotifications, onToggleEmail, onReset }: { emailNotif
         ['Lieux publics uniquement', 'Les adresses privées et les rendez-vous isolés ne sont jamais proposés.'],
         ['Pas de vente', 'La plateforme sert exclusivement aux échanges gratuits de vignettes.']
       ].map(([title, copy], index) => <div key={title}><span>{index + 1}</span><div><strong>{title}</strong><p>{copy}</p></div></div>)}</div>
-      <aside className="data-panel"><ShieldCheck size={31}/><h2>Vos données</h2><p>Votre inventaire sert uniquement à trouver des correspondances utiles entre parents.</p><button onClick={onToggleEmail}><Bell size={17}/> Emails de matching : {emailNotifications ? 'activés' : 'désactivés'}</button><button><Inbox size={17}/> Exporter mes données</button><button><CircleHelp size={17}/> Signaler un problème</button><button className="delete-button" onClick={onReset}><Trash2 size={17}/> Supprimer mon compte</button><small>Service indépendant, non affilié à Panini. Aucun logo ou visuel officiel n’est utilisé.</small></aside>
+      <aside className="data-panel"><ShieldCheck size={31}/><h2>Vos données</h2><p>Votre inventaire sert uniquement à trouver des correspondances utiles entre parents.</p><button onClick={onToggleMatchNotifications}><Bell size={17}/> Notifications de matching : {matchNotificationsEnabled ? 'activées' : 'désactivées'}</button><button><Inbox size={17}/> Exporter mes données</button><button><CircleHelp size={17}/> Signaler un problème</button><button className="delete-button" onClick={onReset}><Trash2 size={17}/> Supprimer mon compte</button><small>Service indépendant, non affilié à Panini. Aucun logo ou visuel officiel n’est utilisé.</small></aside>
     </div>
   </motion.section>
 }
@@ -354,6 +354,7 @@ export default function App() {
   const [inventory, setInventoryState] = useState<Inventory>(storage.getInventory())
   const [exchanges, setExchanges] = useState<Exchange[]>(storage.getExchanges())
   const [backendMatches, setBackendMatches] = useState<Match[]>([])
+  const [matchNotifications, setMatchNotifications] = useState<MatchNotification[]>([])
   const [runtimeVenues, setRuntimeVenues] = useState(isSupabaseConfigured ? [] : demoVenues)
   const [proposal, setProposal] = useState<Match | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -364,7 +365,7 @@ export default function App() {
     if (!isSupabaseConfigured || !profile) return
     try {
       const workspace = await loadWorkspace()
-      setCollectionId(workspace.collectionId); setInventoryState(workspace.inventory); setBackendMatches(workspace.matches); setExchanges(workspace.exchanges); setRuntimeVenues(workspace.venues); setBackendError('')
+      setCollectionId(workspace.collectionId); setInventoryState(workspace.inventory); setBackendMatches(workspace.matches); setExchanges(workspace.exchanges); setMatchNotifications(workspace.matchNotifications); setRuntimeVenues(workspace.venues); setBackendError('')
     } catch (cause) { setBackendError(cause instanceof Error ? cause.message : 'Impossible de charger vos données.') }
   }
   const setInventory = (next: Inventory) => {
@@ -396,10 +397,16 @@ export default function App() {
   const enterApp = () => { window.history.pushState({}, '', '/app'); setRoute('/app'); setOnboarded(true); window.scrollTo(0, 0) }
   const leaveForLanding = () => { window.history.replaceState({}, '', '/'); setRoute('/'); setProfile(null); setAuthUserId(null); setOnboarded(false); window.scrollTo(0, 0) }
   const handleSignOut = async () => { if (isSupabaseConfigured) await signOut(); else storage.clear(); leaveForLanding() }
-  const toggleEmailNotifications = async () => {
+  const toggleMatchNotifications = async () => {
     if (!isSupabaseConfigured || !profile) return
-    try { setProfile(await updateEmailMatchNotifications(profile.id, !profile.email_match_notifications)); setBackendError('') }
-    catch (cause) { setBackendError(cause instanceof Error ? cause.message : 'Préférence email non enregistrée.') }
+    try { setProfile(await updateMatchNotifications(profile.id, !profile.match_notifications_enabled)); setBackendError('') }
+    catch (cause) { setBackendError(cause instanceof Error ? cause.message : 'Préférence de notifications non enregistrée.') }
+  }
+  const dismissMatchNotifications = async (openMatches = false) => {
+    if (openMatches) setView('matches')
+    if (!isSupabaseConfigured || !matchNotifications.length) return
+    try { await markMatchNotificationsRead(); await refreshWorkspace() }
+    catch (cause) { setBackendError(cause instanceof Error ? cause.message : 'Notifications non mises à jour.') }
   }
   const reset = async () => { if (isSupabaseConfigured) await deleteAccount(); storage.clear(); setInventoryState(storage.getInventory()); setExchanges([]); leaveForLanding() }
   useEffect(() => setMenuOpen(false), [view])
@@ -439,13 +446,19 @@ export default function App() {
     </aside>
     {menuOpen && <button className="nav-scrim" onClick={() => setMenuOpen(false)} aria-label="Fermer le menu"/>}
     <main className="app-main">
-      <header className="app-header"><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu/></button><Brand compact/><div><span className="demo-badge">{isSupabaseConfigured ? 'En ligne' : 'Mode démo'}</span><button className="notification-button" aria-label="Notifications"><Bell size={20}/>{exchanges.some((item) => item.status === 'propose') && <i/>}</button></div></header>
+      <header className="app-header"><button className="menu-button" onClick={() => setMenuOpen(true)}><Menu/></button><Brand compact/><div><span className="demo-badge">{isSupabaseConfigured ? 'En ligne' : 'Mode démo'}</span><button className="notification-button" aria-label="Notifications"><Bell size={20}/>{(exchanges.some((item) => item.status === 'propose') || matchNotifications.length > 0) && <i/>}</button></div></header>
       {backendError && <div className="backend-alert" role="alert"><Info size={16}/>{backendError}<button onClick={() => setBackendError('')}><X size={15}/></button></div>}
+      {matchNotifications.length > 0 && <div className="match-notification-panel" role="status">
+        <Bell size={18}/>
+        <div><strong>{matchNotifications.length} nouvelle{matchNotifications.length > 1 ? 's' : ''} correspondance{matchNotifications.length > 1 ? 's' : ''}</strong><p>{matchNotifications.slice(0, 2).map((item) => `${item.adultAlias} (${item.commune}) : ${item.gives.slice(0, 3).join(', ')}`).join(' · ')}</p></div>
+        <button onClick={() => void dismissMatchNotifications(true)}>Voir</button>
+        <button className="icon-button" onClick={() => void dismissMatchNotifications()} aria-label="Masquer les notifications"><X size={15}/></button>
+      </div>}
       <AnimatePresence mode="wait">
         {view === 'inventaire' && <InventoryView key="inventory" inventory={inventory} setInventory={setInventory} matchCount={matches.length}/>} 
         {view === 'matches' && <MatchesView key="matches" matches={matches} onPropose={setProposal}/>} 
         {view === 'echanges' && <ExchangesView key="exchanges" exchanges={exchanges} updateExchange={updateExchange}/>} 
-        {view === 'securite' && <SafetyView key="safety" emailNotifications={profile?.email_match_notifications ?? false} onToggleEmail={toggleEmailNotifications} onReset={reset}/>} 
+        {view === 'securite' && <SafetyView key="safety" matchNotificationsEnabled={profile?.match_notifications_enabled ?? false} onToggleMatchNotifications={toggleMatchNotifications} onReset={reset}/>} 
       </AnimatePresence>
     </main>
     <AnimatePresence>{proposal && <ProposalModal match={proposal} venues={runtimeVenues} onClose={() => setProposal(null)} onConfirm={addExchange}/>}</AnimatePresence>

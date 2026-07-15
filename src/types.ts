@@ -34,3 +34,12 @@ export interface Exchange {
   code: string
   canConfirm?: boolean
 }
+
+export interface MatchNotification {
+  id: string
+  adultAlias: string
+  commune: string
+  gives: string[]
+  receives: string[]
+  createdAt: string
+}
