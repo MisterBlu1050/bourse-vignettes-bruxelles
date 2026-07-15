@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowLeftRight, Bell, Check, ChevronRight, CircleHelp, ClipboardCheck,
   Home, Inbox, Info, LibraryBig, LockKeyhole, MapPin, Menu, PackageOpen,
-  Plus, Search, ShieldCheck, Sparkles, Trash2, UserRoundCheck, X, LogOut
+  Phone, Plus, Search, ShieldCheck, Sparkles, Trash2, UserRoundCheck, X, LogOut
 } from 'lucide-react'
 import { collection, demoCollectors, venues as demoVenues } from './data'
 import { allStickerCodes, canonicalizeStickerCode, isStickerCode, stickerGroups } from './catalog'
@@ -19,6 +19,9 @@ const navItems: Array<{ id: View; label: string; icon: typeof Home }> = [
   { id: 'echanges', label: 'Mes échanges', icon: ArrowLeftRight },
   { id: 'securite', label: 'Sécurité', icon: ShieldCheck }
 ]
+
+const cleanPhoneNumber = (value: string) => value.trim().replace(/\s+/g, ' ')
+const isValidPhoneNumber = (value: string) => /^\+?[0-9][0-9 .()/-]{6,24}$/.test(cleanPhoneNumber(value))
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return <div className="brand" aria-label="Bourse aux vignettes Bruxelles">
@@ -300,29 +303,57 @@ function ProposalModal({ match, venues, onClose, onConfirm }: { match: Match; ve
   const tomorrow = new Date(Date.now() + 86400000)
   const [date, setDate] = useState(tomorrow.toISOString().slice(0, 10))
   const [slot, setSlot] = useState('14:00–15:00')
+  const [phone, setPhone] = useState('')
+  const [phoneError, setPhoneError] = useState('')
   const venue = venues.find((item) => item.id === venueId)
-  const confirm = () => venue && onConfirm({ id: crypto.randomUUID(), match, venue, date, slot, status: 'propose', code: Math.random().toString(36).slice(2, 8).toUpperCase(), canConfirm: false })
+  const confirm = () => {
+    const cleanedPhone = cleanPhoneNumber(phone)
+    if (!isValidPhoneNumber(cleanedPhone)) { setPhoneError('Indiquez un numéro joignable, par exemple +32 470 12 34 56.'); return }
+    if (venue) onConfirm({ id: crypto.randomUUID(), match, venue, date, slot, status: 'propose', code: Math.random().toString(36).slice(2, 8).toUpperCase(), canConfirm: false, myPhone: cleanedPhone, phonesVisible: false })
+  }
 
   return <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={onClose}>
     <motion.div className="modal" initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="proposal-title">
       <button className="modal-close" onClick={onClose} aria-label="Fermer"><X/></button>
       <span className="eyebrow">Échange avec {match.adultAlias}</span><h2 id="proposal-title">Proposer un rendez-vous</h2><p>Uniquement dans un lieu public prédéfini, pendant ses heures d’ouverture.</p>
-      {venues.length ? <label>Lieu public<select value={venueId} onChange={(e) => setVenueId(e.target.value)}>{venues.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.commune}</option>)}</select><small>{venue?.note}</small></label> : <div className="no-venues"><MapPin size={19}/><span>Aucun lieu n’est encore approuvé pour le pilote.</span></div>}
+      {venues.length ? <label>Choisir le lieu public<select value={venueId} onChange={(e) => setVenueId(e.target.value)}>{venues.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.commune}</option>)}</select><small>{venue?.note}</small></label> : <div className="no-venues"><MapPin size={19}/><span>Aucun lieu n’est encore approuvé pour le pilote.</span></div>}
       <div className="modal-fields"><label>Date<input type="date" min={tomorrow.toISOString().slice(0, 10)} value={date} onChange={(e) => setDate(e.target.value)}/></label><label>Créneau<select value={slot} onChange={(e) => setSlot(e.target.value)}><option>10:00–11:00</option><option>11:00–12:00</option><option>14:00–15:00</option><option>15:00–16:00</option><option>16:00–17:00</option></select></label></div>
-      <div className="no-chat"><LockKeyhole size={19}/><span>Aucun message libre ni coordonnée personnelle ne sera envoyé.</span></div>
+      <label>Téléphone du parent<input value={phone} onChange={(e) => { setPhone(e.target.value); setPhoneError('') }} type="tel" inputMode="tel" autoComplete="tel" placeholder="+32 470 12 34 56"/><small>Visible par l’autre parent uniquement si l’échange est confirmé.</small></label>
+      {phoneError && <p className="entry-error" role="alert">{phoneError}</p>}
+      <div className="no-chat"><LockKeyhole size={19}/><span>Pas de chat public : le téléphone sert seulement à finaliser ce rendez-vous entre adultes.</span></div>
       <button className="primary-button" onClick={confirm} disabled={!venue}>Envoyer la proposition <ChevronRight size={18}/></button>
     </motion.div>
   </motion.div>
 }
 
-function ExchangesView({ exchanges, updateExchange }: { exchanges: Exchange[]; updateExchange: (id: string, status: Exchange['status']) => void }) {
+function PhoneConfirmModal({ exchange, onClose, onConfirm }: { exchange: Exchange; onClose: () => void; onConfirm: (phone: string) => void }) {
+  const [phone, setPhone] = useState('')
+  const [error, setError] = useState('')
+  const submit = () => {
+    const cleaned = cleanPhoneNumber(phone)
+    if (!isValidPhoneNumber(cleaned)) { setError('Indiquez un numéro joignable, par exemple +32 470 12 34 56.'); return }
+    onConfirm(cleaned)
+  }
+  return <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={onClose}>
+    <motion.div className="modal" initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="phone-title">
+      <button className="modal-close" onClick={onClose} aria-label="Fermer"><X/></button>
+      <span className="eyebrow">Accepter le rendez-vous</span><h2 id="phone-title">Votre téléphone parent</h2><p>Une fois l’échange confirmé, les deux parents verront leurs numéros pour se retrouver facilement.</p>
+      <label>Téléphone<input value={phone} onChange={(e) => { setPhone(e.target.value); setError('') }} type="tel" inputMode="tel" autoComplete="tel" placeholder="+32 470 12 34 56"/></label>
+      {error && <p className="entry-error" role="alert">{error}</p>}
+      <div className="no-chat"><Phone size={19}/><span>Ce numéro est lié uniquement au rendez-vous avec {exchange.match.adultAlias}.</span></div>
+      <button className="primary-button" onClick={submit}>Accepter et échanger les numéros <ChevronRight size={18}/></button>
+    </motion.div>
+  </motion.div>
+}
+
+function ExchangesView({ exchanges, updateExchange }: { exchanges: Exchange[]; updateExchange: (exchange: Exchange, status: Exchange['status']) => void }) {
   const statusLabel = { propose: 'En attente', confirme: 'Confirmé', termine: 'Terminé', annule: 'Annulé' }
   return <motion.section className="workspace" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}>
-    <div className="page-heading"><div><span className="eyebrow">Suivi</span><h1>Mes échanges</h1><p>Rendez-vous organisés sans partager vos coordonnées.</p></div></div>
+    <div className="page-heading"><div><span className="eyebrow">Suivi</span><h1>Mes échanges</h1><p>Lieu, créneau et téléphone restent liés à chaque rendez-vous.</p></div></div>
     {exchanges.length ? <div className="exchange-list">{exchanges.map((exchange) => <article key={exchange.id}>
       <div className="date-tile"><strong>{new Date(exchange.date + 'T12:00:00').toLocaleDateString('fr-BE', { day: '2-digit' })}</strong><span>{new Date(exchange.date + 'T12:00:00').toLocaleDateString('fr-BE', { month: 'short' })}</span></div>
-      <div className="exchange-main"><span className={`status ${exchange.status}`}>{statusLabel[exchange.status]}</span><h2>{exchange.match.adultAlias}</h2><p><MapPin size={14}/>{exchange.venue.name} · {exchange.slot}</p><div className="mini-trade"><span>Recevoir : {exchange.match.gives.join(', ')}</span><span>Donner : {exchange.match.receives.join(', ')}</span></div></div>
-      <div className="exchange-actions">{exchange.status === 'propose' && <>{exchange.canConfirm !== false ? <button onClick={() => updateExchange(exchange.id, 'confirme')}><Check size={16}/> Accepter la proposition</button> : <span className="waiting-note">Réponse de l’autre parent attendue</span>}<button className="danger-link" onClick={() => updateExchange(exchange.id, 'annule')}>Annuler</button></>}{exchange.status === 'confirme' && <><span className="meeting-code">Code : <b>{exchange.code}</b></span><button onClick={() => updateExchange(exchange.id, 'termine')}><ClipboardCheck size={16}/> Marquer terminé</button></>}{exchange.status === 'termine' && <span className="complete-note"><Check size={16}/> Échange clôturé</span>}</div>
+      <div className="exchange-main"><span className={`status ${exchange.status}`}>{statusLabel[exchange.status]}</span><h2>{exchange.match.adultAlias}</h2><p><MapPin size={14}/>{exchange.venue.name} · {exchange.venue.commune} · {exchange.slot}</p><div className="mini-trade"><span>Recevoir : {exchange.match.gives.join(', ')}</span><span>Donner : {exchange.match.receives.join(', ')}</span></div>{exchange.phonesVisible && <div className="phone-strip"><span><Phone size={13}/> Vous : {exchange.myPhone}</span><span><Phone size={13}/> {exchange.match.adultAlias} : {exchange.otherPhone}</span></div>}</div>
+      <div className="exchange-actions">{exchange.status === 'propose' && <>{exchange.canConfirm !== false ? <button onClick={() => updateExchange(exchange, 'confirme')}><Check size={16}/> Accepter la proposition</button> : <span className="waiting-note">Réponse de l’autre parent attendue</span>}<button className="danger-link" onClick={() => updateExchange(exchange, 'annule')}>Annuler</button></>}{exchange.status === 'confirme' && <><span className="meeting-code">Code : <b>{exchange.code}</b></span><button onClick={() => updateExchange(exchange, 'termine')}><ClipboardCheck size={16}/> Marquer terminé</button></>}{exchange.status === 'termine' && <span className="complete-note"><Check size={16}/> Échange clôturé</span>}</div>
     </article>)}</div> : <div className="empty-state"><ArrowLeftRight size={34}/><h2>Aucun rendez-vous</h2><p>Une proposition apparaîtra ici après avoir choisi une correspondance.</p></div>}
   </motion.section>
 }
@@ -357,6 +388,7 @@ export default function App() {
   const [matchNotifications, setMatchNotifications] = useState<MatchNotification[]>([])
   const [runtimeVenues, setRuntimeVenues] = useState(isSupabaseConfigured ? [] : demoVenues)
   const [proposal, setProposal] = useState<Match | null>(null)
+  const [acceptingExchange, setAcceptingExchange] = useState<Exchange | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const demoMatches = useMemo(() => findReciprocalMatches(inventory, demoCollectors), [inventory])
   const matches = isSupabaseConfigured ? backendMatches : demoMatches
@@ -375,23 +407,25 @@ export default function App() {
   }
   const addExchange = async (exchange: Exchange) => {
     if (isSupabaseConfigured && collectionId) {
-      try { await proposeBackendExchange(collectionId, exchange.match, exchange.venue, exchange.date, exchange.slot); await refreshWorkspace() }
+      try { await proposeBackendExchange(collectionId, exchange.match, exchange.venue, exchange.date, exchange.slot, exchange.myPhone ?? ''); await refreshWorkspace() }
       catch (cause) { setBackendError(cause instanceof Error ? cause.message : 'Proposition non envoyée.'); return }
     } else {
       const next = [exchange, ...exchanges]; setExchanges(next); storage.setExchanges(next)
     }
     setProposal(null); setView('echanges')
   }
-  const updateExchange = async (id: string, status: Exchange['status']) => {
+  const updateExchange = async (exchange: Exchange, status: Exchange['status'], phone?: string) => {
+    if (status === 'confirme' && !phone) { setAcceptingExchange(exchange); return }
     if (isSupabaseConfigured) {
       try {
-        if (status === 'confirme') await confirmBackendExchange(id)
-        else if (status === 'annule') await setBackendExchangeStatus(id, 'cancelled')
-        else if (status === 'termine') await setBackendExchangeStatus(id, 'completed')
+        if (status === 'confirme') await confirmBackendExchange(exchange.id, phone ?? '')
+        else if (status === 'annule') await setBackendExchangeStatus(exchange.id, 'cancelled')
+        else if (status === 'termine') await setBackendExchangeStatus(exchange.id, 'completed')
+        setAcceptingExchange(null)
         await refreshWorkspace()
       } catch (cause) { setBackendError(cause instanceof Error ? cause.message : 'Échange non mis à jour.') }
     } else {
-      const next = exchanges.map((item) => item.id === id ? { ...item, status } : item); setExchanges(next); storage.setExchanges(next)
+      const next = exchanges.map((item) => item.id === exchange.id ? { ...item, status, myPhone: phone ?? item.myPhone, otherPhone: item.myPhone, phonesVisible: status === 'confirme' ? true : item.phonesVisible } : item); setExchanges(next); storage.setExchanges(next); setAcceptingExchange(null)
     }
   }
   const enterApp = () => { window.history.pushState({}, '', '/app'); setRoute('/app'); setOnboarded(true); window.scrollTo(0, 0) }
@@ -462,6 +496,7 @@ export default function App() {
       </AnimatePresence>
     </main>
     <AnimatePresence>{proposal && <ProposalModal match={proposal} venues={runtimeVenues} onClose={() => setProposal(null)} onConfirm={addExchange}/>}</AnimatePresence>
+    <AnimatePresence>{acceptingExchange && <PhoneConfirmModal exchange={acceptingExchange} onClose={() => setAcceptingExchange(null)} onConfirm={(phone) => void updateExchange(acceptingExchange, 'confirme', phone)}/>}</AnimatePresence>
   </div>
 }
 

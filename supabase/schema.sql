@@ -78,6 +78,8 @@ create table public.exchanges (
   meeting_slot text not null check (meeting_slot = any (array['10:00–11:00','11:00–12:00','14:00–15:00','15:00–16:00','16:00–17:00'])),
   proposer_gives text[] not null check (cardinality(proposer_gives) between 1 and 50),
   recipient_gives text[] not null check (cardinality(recipient_gives) between 1 and 50),
+  proposer_phone text check (proposer_phone is null or proposer_phone ~ '^\+?[0-9][0-9 .()/-]{6,24}$'),
+  recipient_phone text check (recipient_phone is null or recipient_phone ~ '^\+?[0-9][0-9 .()/-]{6,24}$'),
   status public.exchange_status not null default 'proposed',
   meeting_code text not null default upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6)),
   created_at timestamptz not null default now(),
@@ -282,12 +284,17 @@ language sql security definer stable set search_path = public as $$
 $$;
 
 -- Acceptation atomique : verrouille les inventaires avant confirmation.
-create or replace function public.confirm_exchange(exchange_to_confirm uuid)
+create or replace function public.confirm_exchange(exchange_to_confirm uuid, recipient_phone_input text)
 returns public.exchanges
 language plpgsql security definer set search_path = public as $$
 declare ex exchanges;
 declare sticker text;
 begin
+  recipient_phone_input := trim(regexp_replace(coalesce(recipient_phone_input, ''), '\s+', ' ', 'g'));
+  if recipient_phone_input !~ '^\+?[0-9][0-9 .()/-]{6,24}$' then
+    raise exception 'Téléphone invalide';
+  end if;
+
   select * into ex from exchanges where id = exchange_to_confirm for update;
   if ex.recipient_id <> auth.uid() or ex.status <> 'proposed' or ex.expires_at < now() then
     raise exception 'Proposition indisponible';
@@ -303,7 +310,10 @@ begin
       raise exception 'Une vignette proposée n’est plus disponible';
     end if;
   end loop;
-  update exchanges set status = 'confirmed', updated_at = now() where id = ex.id returning * into ex;
+  update exchanges
+  set status = 'confirmed', recipient_phone = recipient_phone_input, updated_at = now()
+  where id = ex.id
+  returning * into ex;
   insert into notifications(user_id, exchange_id, kind) values (ex.proposer_id, ex.id, 'confirmed');
   return ex;
 end;
@@ -316,13 +326,18 @@ create or replace function public.propose_exchange(
   target_date date,
   target_slot text,
   my_stickers text[],
-  their_stickers text[]
+  their_stickers text[],
+  proposer_phone_input text
 )
 returns public.exchanges
 language plpgsql security definer set search_path = public as $$
 declare ex exchanges;
 declare sticker text;
 begin
+  proposer_phone_input := trim(regexp_replace(coalesce(proposer_phone_input, ''), '\s+', ' ', 'g'));
+  if proposer_phone_input !~ '^\+?[0-9][0-9 .()/-]{6,24}$' then
+    raise exception 'Téléphone invalide';
+  end if;
   if target_recipient = auth.uid() or target_date <= current_date or cardinality(my_stickers) not between 1 and 50 or cardinality(their_stickers) not between 1 and 50 then
     raise exception 'Proposition invalide';
   end if;
@@ -349,8 +364,8 @@ begin
       raise exception 'Correspondance invalide';
     end if;
   end loop;
-  insert into exchanges(collection_id, proposer_id, recipient_id, venue_id, meeting_date, meeting_slot, proposer_gives, recipient_gives)
-  values (target_collection, auth.uid(), target_recipient, target_venue, target_date, target_slot, my_stickers, their_stickers)
+  insert into exchanges(collection_id, proposer_id, recipient_id, venue_id, meeting_date, meeting_slot, proposer_gives, recipient_gives, proposer_phone)
+  values (target_collection, auth.uid(), target_recipient, target_venue, target_date, target_slot, my_stickers, their_stickers, proposer_phone_input)
   returning * into ex;
   insert into notifications(user_id, exchange_id, kind) values (target_recipient, ex.id, 'proposal');
   return ex;
@@ -384,7 +399,8 @@ returns table (
   id uuid, other_user_id uuid, other_alias text, other_commune text, other_exchanges integer,
   venue_id uuid, venue_name text, venue_commune text, venue_note text,
   meeting_date date, meeting_slot text, status public.exchange_status, meeting_code text,
-  i_give text[], i_receive text[], can_confirm boolean
+  i_give text[], i_receive text[], can_confirm boolean,
+  my_phone text, other_phone text, phones_visible boolean
 )
 language sql security definer stable set search_path = public as $$
   select e.id,
@@ -394,7 +410,14 @@ language sql security definer stable set search_path = public as $$
     e.meeting_date, e.meeting_slot, e.status, e.meeting_code,
     case when e.proposer_id = auth.uid() then e.proposer_gives else e.recipient_gives end,
     case when e.proposer_id = auth.uid() then e.recipient_gives else e.proposer_gives end,
-    e.recipient_id = auth.uid()
+    e.recipient_id = auth.uid(),
+    case when e.proposer_id = auth.uid() then e.proposer_phone else e.recipient_phone end,
+    case
+      when e.status in ('confirmed','completed') and e.proposer_id = auth.uid() then e.recipient_phone
+      when e.status in ('confirmed','completed') then e.proposer_phone
+      else null
+    end,
+    e.status in ('confirmed','completed') and e.proposer_phone is not null and e.recipient_phone is not null
   from exchanges e
   join profiles p on p.id = case when e.proposer_id = auth.uid() then e.recipient_id else e.proposer_id end
   join venues v on v.id = e.venue_id
@@ -439,8 +462,8 @@ create policy push_own_all on public.push_subscriptions for all using (user_id =
 grant execute on function public.find_matches(uuid) to authenticated;
 grant execute on function public.queue_match_notifications(uuid) to authenticated;
 grant execute on function public.list_my_match_notifications() to authenticated;
-grant execute on function public.propose_exchange(uuid, uuid, uuid, date, text, text[], text[]) to authenticated;
-grant execute on function public.confirm_exchange(uuid) to authenticated;
+grant execute on function public.propose_exchange(uuid, uuid, uuid, date, text, text[], text[], text) to authenticated;
+grant execute on function public.confirm_exchange(uuid, text) to authenticated;
 grant execute on function public.set_exchange_status(uuid, public.exchange_status) to authenticated;
 grant execute on function public.list_my_exchanges() to authenticated;
 grant execute on function public.delete_my_account() to authenticated;

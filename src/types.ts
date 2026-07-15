@@ -33,6 +33,9 @@ export interface Exchange {
   status: ExchangeStatus
   code: string
   canConfirm?: boolean
+  myPhone?: string
+  otherPhone?: string
+  phonesVisible?: boolean
 }
 
 export interface MatchNotification {

@@ -80,7 +80,10 @@ export async function loadWorkspace(): Promise<BackendWorkspace> {
     id: String(row.id),
     match: { id: String(row.other_user_id), adultAlias: String(row.other_alias), commune: String(row.other_commune), gives: row.i_receive as string[], receives: row.i_give as string[], reliability: 100, exchanges: Number(row.other_exchanges) },
     venue: { id: String(row.venue_id), name: String(row.venue_name), commune: String(row.venue_commune), note: String(row.venue_note) },
-    date: String(row.meeting_date), slot: String(row.meeting_slot), status: mapExchangeStatus(String(row.status)), code: String(row.meeting_code), canConfirm: Boolean(row.can_confirm)
+    date: String(row.meeting_date), slot: String(row.meeting_slot), status: mapExchangeStatus(String(row.status)), code: String(row.meeting_code), canConfirm: Boolean(row.can_confirm),
+    myPhone: row.my_phone ? String(row.my_phone) : undefined,
+    otherPhone: row.other_phone ? String(row.other_phone) : undefined,
+    phonesVisible: Boolean(row.phones_visible)
   }))
   const approvedVenues: Venue[] = (venuesResult.data ?? []).map((row) => ({ id: row.id, name: row.name, commune: row.commune, note: row.public_note }))
   const matchNotifications: MatchNotification[] = (notificationsResult.data ?? []).map((row: Record<string, unknown>) => ({
@@ -129,16 +132,17 @@ export async function markMatchNotificationsRead() {
   if (error) throw error
 }
 
-export async function proposeBackendExchange(collectionId: string, match: Match, venue: Venue, date: string, slot: string) {
+export async function proposeBackendExchange(collectionId: string, match: Match, venue: Venue, date: string, slot: string, phone: string) {
   const { error } = await requireClient().rpc('propose_exchange', {
     target_collection: collectionId, target_recipient: match.id, target_venue: venue.id,
-    target_date: date, target_slot: slot, my_stickers: match.receives, their_stickers: match.gives
+    target_date: date, target_slot: slot, my_stickers: match.receives, their_stickers: match.gives,
+    proposer_phone_input: phone
   })
   if (error) throw error
 }
 
-export async function confirmBackendExchange(id: string) {
-  const { error } = await requireClient().rpc('confirm_exchange', { exchange_to_confirm: id })
+export async function confirmBackendExchange(id: string, phone: string) {
+  const { error } = await requireClient().rpc('confirm_exchange', { exchange_to_confirm: id, recipient_phone_input: phone })
   if (error) throw error
 }
 
