@@ -7,6 +7,7 @@ export interface ParentProfile {
   adult_alias: string
   commune: string
   is_adult_confirmed: boolean
+  email_match_notifications: boolean
 }
 
 export interface BackendWorkspace {
@@ -29,13 +30,24 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export async function getProfile(userId: string): Promise<ParentProfile | null> {
-  const { data, error } = await requireClient().from('profiles').select('id,adult_alias,commune,is_adult_confirmed').eq('id', userId).maybeSingle()
+  const { data, error } = await requireClient().from('profiles').select('id,adult_alias,commune,is_adult_confirmed,email_match_notifications').eq('id', userId).maybeSingle()
   if (error) throw error
   return data
 }
 
 export async function createProfile(userId: string, alias: string, commune: string): Promise<ParentProfile> {
-  const { data, error } = await requireClient().from('profiles').insert({ id: userId, adult_alias: alias, commune, is_adult_confirmed: true }).select('id,adult_alias,commune,is_adult_confirmed').single()
+  const { data, error } = await requireClient().from('profiles').insert({ id: userId, adult_alias: alias, commune, is_adult_confirmed: true }).select('id,adult_alias,commune,is_adult_confirmed,email_match_notifications').single()
+  if (error) throw error
+  return data
+}
+
+export async function updateEmailMatchNotifications(userId: string, enabled: boolean): Promise<ParentProfile> {
+  const { data, error } = await requireClient()
+    .from('profiles')
+    .update({ email_match_notifications: enabled })
+    .eq('id', userId)
+    .select('id,adult_alias,commune,is_adult_confirmed,email_match_notifications')
+    .single()
   if (error) throw error
   return data
 }
@@ -94,6 +106,10 @@ export async function saveInventory(collectionId: string, inventory: Inventory) 
     const { error } = await client.from('inventory').insert(rows)
     if (error) throw error
   }
+  const { error: notifyError } = await client.rpc('queue_match_notifications', { target_collection: collectionId })
+  if (notifyError) console.warn('Notifications de matching non créées', notifyError)
+  const { error: emailError } = await client.functions.invoke('send-match-emails')
+  if (emailError) console.warn('Emails de matching non envoyés', emailError)
 }
 
 export async function proposeBackendExchange(collectionId: string, match: Match, venue: Venue, date: string, slot: string) {

@@ -17,12 +17,26 @@ Sans variables d’environnement, l’application démarre en **mode démonstrat
 
 1. Créer un projet Supabase en région Europe/Francfort.
 2. Exécuter [`supabase/schema.sql`](supabase/schema.sql) dans l’éditeur SQL.
-3. Activer Google dans Authentication → Providers, avec uniquement l’identité de base et l’e-mail.
+3. Activer l’authentification par lien email dans Supabase Auth.
 4. Copier `.env.example` vers `.env.local` et compléter l’URL et la clé anonyme.
-5. Ajouter l’URL locale et l’URL Cloudflare Pages aux Redirect URLs de Supabase et de Google OAuth.
+5. Ajouter l’URL locale et l’URL Cloudflare Pages aux Redirect URLs de Supabase.
 6. Obtenir l’accord explicite de chaque lieu, puis passer sa colonne `approved` à `true`.
 
-Le schéma contient les règles RLS, le matching réciproque, les propositions, notifications, blocages, signalements, journal de modération et une confirmation atomique qui revérifie la disponibilité des vignettes.
+Le schéma contient les règles RLS, le matching réciproque, les propositions, notifications email de matching, blocages, signalements, journal de modération et une confirmation atomique qui revérifie la disponibilité des vignettes.
+
+## Notifications email de matching
+
+Quand un parent met à jour ses doubles ou ses vignettes recherchées, `queue_match_notifications` détecte les nouvelles correspondances réciproques et crée une notification `match` pour les deux parents concernés. L’Edge Function `send-match-emails` envoie ensuite les emails en attente.
+
+Secrets requis côté Supabase :
+
+```bash
+supabase secrets set RESEND_API_KEY=...
+supabase secrets set MATCH_EMAIL_FROM="Bourse aux vignettes Bruxelles <notifications@votre-domaine.be>"
+supabase secrets set APP_PUBLIC_URL=https://bourse-vignettes-bruxelles.pages.dev
+```
+
+Sans ces secrets, les correspondances sont détectées mais les emails ne partent pas. Chaque parent peut désactiver les emails de matching dans l’écran “Sécurité et données”.
 
 ## Déployer gratuitement sur Cloudflare Pages
 
